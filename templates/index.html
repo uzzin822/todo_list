@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>유진 할일 목록</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .completed {
+            text-decoration: line-through;
+            color: #888;
+        }
+        .overdue {
+            color: red !important;
+        }
+        .todo-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .todo-actions {
+            margin-left: auto;
+        }
+        .todo-date {
+            margin: 0 15px;
+            min-width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>유진 할일 목록</h1>
+        
+        <div class="input-group mb-3">
+            <input type="text" id="todoInput" class="form-control" placeholder="새로운 할일을 입력하세요">
+            <input type="date" id="dueDateInput" class="form-control">
+            <div class="input-group-append">
+                <button class="btn btn-primary" id="addTodo">추가</button>
+            </div>
+        </div>
+
+        <div id="todoList" class="mt-4">
+            <!-- 할일 목록이 여기에 동적으로 추가됩니다 -->
+        </div>
+    </div>
+
+    <!-- 수정 모달 -->
+    <div class="modal fade" id="editModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">할일 수정</h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="editForm">
+                        <input type="hidden" id="editTodoId">
+                        <div class="form-group">
+                            <label for="editTodoTitle">제목</label>
+                            <input type="text" class="form-control" id="editTodoTitle">
+                        </div>
+                        <div class="form-group">
+                            <label for="editTodoDueDate">마감일</label>
+                            <input type="date" class="form-control" id="editTodoDueDate">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="editTodoCompleted">
+                                완료됨
+                            </label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">취소</button>
+                    <button type="button" class="btn btn-primary" id="saveEdit">저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // 오늘 날짜를 YYYY-MM-DD 형식으로 반환하는 함수
+            function getTodayDate() {
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            // 페이지 로드 시 날짜 입력 필드에 오늘 날짜 설정
+            $('#dueDateInput').val(getTodayDate());
+
+            // 날짜가 지났는지 확인하는 함수
+            function isOverdue(dueDate) {
+                if (!dueDate) return false;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const dueDateObj = new Date(dueDate);
+                return dueDateObj < today;
+            }
+
+            // 할일 목록 불러오기
+            function loadTodos() {
+                $.get('/api/todos', function(todos) {
+                    $('#todoList').empty();
+                    todos.forEach(function(todo) {
+                        addTodoToList(todo);
+                    });
+                });
+            }
+
+            // 할일 항목을 화면에 추가하는 함수
+            function addTodoToList(todo) {
+                const overdue = isOverdue(todo.due_date_formatted);
+                const todoHtml = `
+                    <div class="todo-item" data-id="${todo.id}">
+                        <input type="checkbox" class="todo-check mr-2" ${todo.completed ? 'checked' : ''}>
+                        <span class="todo-title ${todo.completed ? 'completed' : ''} ${overdue ? 'overdue' : ''}">${todo.title}</span>
+                        <span class="todo-date ${overdue ? 'overdue' : ''}">${todo.due_date_formatted || '날짜 없음'}</span>
+                        <div class="todo-actions">
+                            <button class="btn btn-sm btn-info edit-todo">수정</button>
+                            <button class="btn btn-sm btn-danger delete-todo">삭제</button>
+                        </div>
+                    </div>
+                `;
+                $('#todoList').append(todoHtml);
+            }
+
+            // 입력 필드 초기화
+            function resetInputs() {
+                $('#todoInput').val('');
+                $('#dueDateInput').val(getTodayDate());
+            }
+
+            // 새로운 할일 추가
+            $('#addTodo').click(function() {
+                const title = $('#todoInput').val().trim();
+                const dueDate = $('#dueDateInput').val();
+                
+                if (title) {
+                    $.ajax({
+                        url: '/api/todos',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ 
+                            title: title,
+                            due_date: dueDate || null
+                        }),
+                        success: function(response) {
+                            resetInputs();
+                            loadTodos();
+                        }
+                    });
+                }
+            });
+
+            // Enter 키로 할일 추가
+            $('#todoInput').keypress(function(e) {
+                if (e.which == 13) {
+                    $('#addTodo').click();
+                }
+            });
+
+            // 할일 상태 변경
+            $(document).on('change', '.todo-check', function() {
+                const todoItem = $(this).closest('.todo-item');
+                const todoId = todoItem.data('id');
+                const completed = $(this).prop('checked');
+
+                $.ajax({
+                    url: `/api/todos/${todoId}`,
+                    method: 'PUT',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ completed: completed }),
+                    success: function() {
+                        todoItem.find('.todo-title').toggleClass('completed', completed);
+                    }
+                });
+            });
+
+            // 수정 버튼 클릭
+            $(document).on('click', '.edit-todo', function() {
+                const todoItem = $(this).closest('.todo-item');
+                const todoId = todoItem.data('id');
+                const title = todoItem.find('.todo-title').text();
+                const dueDate = todoItem.find('.todo-date').text();
+                const completed = todoItem.find('.todo-check').prop('checked');
+
+                // 모달에 현재 값들을 설정
+                $('#editTodoId').val(todoId);
+                $('#editTodoTitle').val(title);
+                $('#editTodoDueDate').val(dueDate === '날짜 없음' ? '' : dueDate);
+                $('#editTodoCompleted').prop('checked', completed);
+
+                // 모달 표시
+                $('#editModal').modal('show');
+            });
+
+            // 수정 저장
+            $('#saveEdit').click(function() {
+                const todoId = $('#editTodoId').val();
+                const title = $('#editTodoTitle').val().trim();
+                const dueDate = $('#editTodoDueDate').val();
+                const completed = $('#editTodoCompleted').prop('checked');
+
+                if (title) {
+                    $.ajax({
+                        url: `/api/todos/${todoId}`,
+                        method: 'PUT',
+                        contentType: 'application/json',
+                        data: JSON.stringify({
+                            title: title,
+                            due_date: dueDate || null,
+                            completed: completed
+                        }),
+                        success: function() {
+                            $('#editModal').modal('hide');
+                            loadTodos();
+                        }
+                    });
+                }
+            });
+
+            // 할일 삭제
+            $(document).on('click', '.delete-todo', function() {
+                if (confirm('정말 삭제하시겠습니까?')) {
+                    const todoItem = $(this).closest('.todo-item');
+                    const todoId = todoItem.data('id');
+
+                    $.ajax({
+                        url: `/api/todos/${todoId}`,
+                        method: 'DELETE',
+                        success: function() {
+                            todoItem.remove();
+                        }
+                    });
+                }
+            });
+
+            // 초기 할일 목록 로드
+            loadTodos();
+        });
+    </script>
+</body>
+</html>
